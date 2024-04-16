@@ -1,0 +1,239 @@
+---
+title: "week2-data-cleaning"
+format: html
+author: "Hazel Vaquero"
+---
+
+```{r}
+# Libraries
+library(tidyverse)
+
+# file names
+datadir_raw <- "data/raw/"
+
+datadir_processed <- "data/processed/"
+
+species_file <- "ASDN_Daily_species.csv"
+
+snowsurvey_file <- "ASDN_Snow_survey.csv"
+
+# Load data 
+snowsurvey_csv <- read_csv(file.path(datadir_raw, snowsurvey_file))
+
+```
+
+** Initial Data Cleaning for Snow Cover **
+
+```{r}
+
+snowsurvey_fixed <- snowsurvey_csv %>%
+  mutate(Snow_cover = ifelse(Snow_cover==".", NA, Snow_cover),
+         Snow_cover = ifelse(Snow_cover=="-", NA, Snow_cover),
+         Snow_cover = ifelse(Snow_cover=="n/a", NA, Snow_cover),
+         Snow_cover = ifelse(Snow_cover=="unk", NA, Snow_cover),
+         Snow_cover = ifelse(Snow_cover=="<1", "0", Snow_cover),
+         Snow_cover = ifelse(Snow_cover > 100, NA, Snow_cover),
+         Snow_cover = as.numeric(Snow_cover)
+         )
+```
+
+
+#### Clean water cover column
+```{r clean water cover }
+
+glimpse(snowsurvey_fixed)
+
+```
+
+
+```{r}
+# Let's see what's wrong with water cover
+snowsurvey_fixed %>% 
+  count(Water_cover) %>% 
+  filter(is.na(as.numeric(Water_cover)))
+```
+
+```{r}
+# Edit water cover column according to errors 
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Water_cover = ifelse(Water_cover == "-",NA, Water_cover),
+         Water_cover = ifelse(Water_cover == ".",NA, Water_cover),
+         Water_cover = ifelse(Water_cover == "n/a",NA, Water_cover),
+         Water_cover = ifelse(Water_cover == "unk", NA, Water_cover))
+
+
+# View values in Water Cover column
+# Decimal points are concerning -- 
+unique(snowsurvey_fixed$Water_cover)
+
+```
+
+```{r}
+
+# Round numbers in Water Cover
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Water_cover = as.integer(Water_cover),
+         Water_cover = signif(Water_cover, digits = 0)) %>% 
+# Turn the 400 value to NA
+  mutate(Water_cover = ifelse(Water_cover > 100, NA, Water_cover))
+
+# Double check there is no other weird numbers
+unique(snowsurvey_fixed$Water_cover)
+
+```
+
+#### Clean Land Cover
+```{r}
+# View non numeric values
+snowsurvey_fixed %>% 
+  count(Land_cover) %>% 
+  filter(is.na(as.numeric(Land_cover)))
+
+
+```
+
+
+```{r}
+# Fix errors of Land Cover
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Land_cover = ifelse(Land_cover == "-",NA, Land_cover),
+         Land_cover = ifelse(Land_cover == ".",NA, Land_cover),
+         Land_cover = ifelse(Land_cover == "n/a",NA, Land_cover),
+         Land_cover = ifelse(Land_cover == "unk", NA, Land_cover))
+
+# Check if there is any NA non numeric values
+snowsurvey_fixed %>% 
+  count(Land_cover) %>% 
+  filter(is.na(as.integer(Land_cover)))
+
+
+unique(snowsurvey_fixed$Land_cover)
+
+# Additional edits
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  # Turn column numeric
+  mutate(Land_cover = as.integer(Land_cover),
+         # Round values
+         Land_cover = signif(Land_cover, digits = 0))
+
+```
+#### Total Cover
+
+```{r}
+snowsurvey_fixed %>% 
+  count(Total_cover) %>% 
+  filter(is.na(as.integer(Total_cover)))
+
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Total_cover = ifelse(Total_cover == "-", NA, Total_cover),
+         Total_cover = ifelse(Total_cover == ".", NA, Total_cover),
+         Total_cover = ifelse(Total_cover == "n/a", NA, Total_cover),
+         Total_cover = ifelse(str_detect(Land_cover,"^<"), NA, Land_cover)
+         )
+
+
+unique(snowsurvey_fixed$Total_cover)
+
+# There are negative numbers in this column let's filter to that whole row
+
+snowsurvey_fixed %>% 
+  filter(Total_cover %in% c(-300, -100))
+
+```
+
+
+```{r}
+
+# Replace negative falues as NA's
+snowsurvey_fixed <- 
+  snowsurvey_fixed %>% 
+  mutate(Land_cover = ifelse(Land_cover == -100, NA, Land_cover),
+         Land_cover = ifelse(Land_cover == -300, NA, Land_cover),
+         Total_cover = ifelse(Total_cover == -100, NA, Total_cover),
+         Total_cover = ifelse(Total_cover == -300, NA, Total_cover)
+         )
+
+
+unique(snowsurvey_fixed$Total_cover)
+
+```
+
+
+```{r}
+# Check if Snow_cover + Water_cover + Land_cover = Total_cover
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Snow_cover = as.integer(Snow_cover),
+         Land_cover = as.integer(Land_cover),
+         Water_cover = as.integer(Water_cover),
+         Total_cover = as.integer(Total_cover)) 
+```
+
+Working on the Total Cover
+
+
+```{r}
+
+# If Snow_Cover + Water_Cover + Land_Cover are greater than the Total_Cover then replace Total_Cover with the sum
+# NEED TO ADD ANOTHER IFELSE STATEMENT TO PREVENT IT FROM GOING OVER
+snowsurvey_fixed_1 <- snowsurvey_fixed %>% 
+  mutate(Total_cover_Test = rowSums(cbind(Snow_cover, Water_cover, Land_cover), na.rm = TRUE)) %>% 
+  mutate(Cover_Test = ifelse(Total_cover_Test > Total_cover,
+                               ifelse(Total_cover_Test > 100, Total_cover, Total_cover_Test),
+                               Total_cover))
+
+
+# View all the Total_Cover_Test over 100
+View(snowsurvey_fixed_2 %>% 
+  filter(Total_cover_Test > 100))
+
+
+# Assume all 1 values are small enough to become 0
+snowsurvey_fixed_2 <- snowsurvey_fixed_1 %>% 
+  mutate(Snow_cover = ifelse(Snow_cover == 1 , 0, Snow_cover),
+         Water_cover = ifelse(Water_cover == 1 ,0, Water_cover),
+         Land_cover = ifelse(Land_cover == 1, 0, Land_cover)) %>% 
+  mutate(Total_cover_Test = rowSums(cbind(Snow_cover, Water_cover, Land_cover), na.rm = TRUE)) %>% 
+  mutate(Cover_Test = ifelse(Total_cover_Test > Total_cover,
+                               ifelse(Total_cover_Test > 100, Total_cover, Total_cover_Test),
+                               Total_cover))
+
+
+
+# snowsurvey_fixed_1 <- snowsurvey_fixed_1 %>% 
+#   mutate(validate = 
+#            ifelse((Snow_cover + Water_cover + Land_cover == Total_cover, na.rm = TRUE), "Yes", "No"))
+# 
+# 
+# snowsurvey_fixed_1 <- snowsurvey_fixed_1 %>% 
+#   mutate(
+#     validate = ifelse(
+#       (Snow_cover + Water_cover + Land_cover == Total_cover),
+#       "Yes",
+#       "No"
+#     )
+#   )
+# 
+# 
+# snowsurvey_fixed_2 <-
+#   snowsurvey_fixed %>% 
+#   mutate(test = ifelse(Snow_cover +  Water_cover + Land_cover > Total_cover, 
+#                        Snow_cover +  Water_cover + Land_cover, 
+#                        Total_cover))
+# 
+# 
+# snowsurvey_fixed_2 <- snowsurvey_fixed %>% 
+#   mutate(
+#     Total_cover = ifelse(
+#       rowSums(cbind(Snow_cover, Water_cover, Land_cover), na.rm = TRUE) > Total_cover,
+#       rowSums(cbind(Snow_cover, Water_cover, Land_cover), na.rm = TRUE),
+#       Total_cover
+#     )
+#   )
+
+```
+
+
+
+
+
+
