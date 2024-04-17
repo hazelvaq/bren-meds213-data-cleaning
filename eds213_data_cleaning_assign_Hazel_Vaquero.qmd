@@ -4,6 +4,8 @@ format: html
 editor: "Hazel Vaquero"
 ---
 
+Repository Link: https://github.com/hazelvaq/bren-meds213-data-cleaning 
+
 ```{r}
 # Libraries
 library(tidyverse)
@@ -18,27 +20,12 @@ species_file <- "ASDN_Daily_species.csv"
 snowsurvey_file <- "ASDN_Snow_survey.csv"
 
 # Load data 
-snowsurvey_csv <- read_csv(file.path(datadir_raw, snowsurvey_file))
+snowsurvey_fixed <- read_csv("data/processed/snow_cover.csv")
 
 ```
 
-** Initial Data Cleaning for Snow Cover **
 
-```{r}
-
-snowsurvey_fixed <- snowsurvey_csv %>%
-  mutate(Snow_cover = ifelse(Snow_cover==".", NA, Snow_cover),
-         Snow_cover = ifelse(Snow_cover=="-", NA, Snow_cover),
-         Snow_cover = ifelse(Snow_cover=="n/a", NA, Snow_cover),
-         Snow_cover = ifelse(Snow_cover=="unk", NA, Snow_cover),
-         Snow_cover = ifelse(Snow_cover=="<1", "0", Snow_cover),
-         Snow_cover = ifelse(Snow_cover > 100, NA, Snow_cover),
-         Snow_cover = as.numeric(Snow_cover)
-         )
-```
-
-
-#### Clean water cover column
+### Clean water cover column
 ```{r clean water cover }
 
 glimpse(snowsurvey_fixed)
@@ -63,19 +50,33 @@ snowsurvey_fixed <- snowsurvey_fixed %>%
 unique(snowsurvey_fixed$Water_cover)
 
 ```
+There are some values in Water Cover that are in decimal format. I will just round those up so it matches with the rest of the data. 
 
 ```{r}
 
 # Round numbers in Water Cover
 snowsurvey_fixed <- snowsurvey_fixed %>% 
-  mutate(Water_cover = as.integer(Water_cover)) %>% 
-# Turn the 400 value to NA
-  mutate(Water_cover = ifelse(Water_cover > 100, NA, Water_cover)) 
+  mutate(Water_cover = as.integer(Water_cover)) 
 
-# Double check there is no other weird numbers
-unique(snowsurvey_fixed$Water_cover)
+# Check if there are any over 100 values
+snowsurvey_fixed %>% filter(Water_cover > 100)
 
 ```
+Water_cover and Land_cover are both over 100 and negative. Yet the Total_Cover for this row is 100. Instead of making an assumption on what the researcher was trying to record I will just turn these row values into NA.
+
+```{r}
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Water_cover = ifelse(Water_cover ==353,
+                              c(is.na(Water_cover), 
+                                 is.na(Land_cover), 
+                                is.na(Snow_cover)), Water_cover))
+
+# Double check
+snowsurvey_fixed %>% 
+  filter(Water_cover > 100)
+```
+
+
 
 #### Clean Land Cover
 ```{r}
@@ -83,7 +84,6 @@ unique(snowsurvey_fixed$Water_cover)
 snowsurvey_fixed %>% 
   count(Land_cover) %>% 
   filter(is.na(as.numeric(Land_cover)))
-
 
 ```
 
@@ -110,51 +110,67 @@ snowsurvey_fixed <- snowsurvey_fixed %>%
 
 unique(snowsurvey_fixed$Land_cover)
 
-# -100 and -300 values
-# Turn them into NA values
-snowsurvey_fixed <- snowsurvey_fixed %>% 
-  mutate(Land_cover = ifelse(Land_cover < 0, NA, Land_cover))
+# -100 and -298 values
+
+snowsurvey_fixed %>% filter(Land_cover < 0)
 
 ```
+
+Land_cover has -100 and -298 value. For -100 the Total_Cover is 100 and Water_Cover and Snow_Cover are either 0 or NA. I think it is safe to assume that the researcher might have pressed the negative symbol by accident. I will the replace -100 with 100. Whereas for -298, Snow_cover and Water_Cover are provided. I will assume the researcher meant 55. 
+
+```{r}
+
+```
+
+
 #### Total Cover
 
 ```{r}
-snowsurvey_fixed %>% 
-  count(Total_cover) %>% 
+snowsurvey_fixed %>%
+  count(Total_cover) %>%
   filter(is.na(as.integer(Total_cover)))
 
-snowsurvey_fixed <- snowsurvey_fixed %>% 
+snowsurvey_fixed <- snowsurvey_fixed %>%
   mutate(Total_cover = ifelse(Total_cover %in% c("-", ".", "n/a"),
-                              NA, Total_cover)) %>% 
+                              NA, Total_cover)) %>%
   mutate(Total_cover = ifelse(str_detect(Total_cover, "^<"), NA, Land_cover))
-        
+
 unique(snowsurvey_fixed$Total_cover)
 ```
 
 ```{r}
 # Approach on if Snow_cover + Water_cover + Land_cover = Total_cover
 # Check if Snow_cover + Water_cover + Land_cover = Total_cover
-snowsurvey_fixed_1 <- snowsurvey_fixed %>% 
+
+snowsurvey_fixed_1 <- snowsurvey_fixed %>%
   # Round all values
-  mutate(across(where(is.numeric), round, 0)) %>% 
+  mutate(across(where(is.numeric), round, 0)) %>%
   mutate(Total_test = rowSums(cbind(Snow_cover, Water_cover, Land_cover), na.rm = TRUE))
+#
+# # The Total falls into three variations
+# # 1: Snow_cover + Water_cover + Land_cover > 100
+# # 2: Snow_cover + Water_cover + Land_cover < 100
+# # 3: Snow_cover + Water_cover + Land_cover = 100
+#
+# Snow_cover + Water_cover + Land_cover < Total_Cover
+snowsurvey_fixed_1 <- snowsurvey_fixed_1 %>%
+   mutate(Total_cover = ifelse(Total_test > Total_cover,
+                          ifelse(Total_test <= 100, Total_test, Total_cover), Total_test))
 
-# The Total falls into three variations
-# 1: Snow_cover + Water_cover + Land_cover > 100
-# 2: Snow_cover + Water_cover + Land_cover < 100
-# 3: Snow_cover + Water_cover + Land_cover = 100
+View(snowsurvey_fixed_1 %>% filter(Total_cover < 100))
 
-View(snowsurvey_fixed_1 %>% filter(Total_test < 100))
+```
 
+In the code above, if the summation of Snow_cover + Water_cover + Land_cover was less than the Total_Cover and was less than 100 then the Total_Cover will be updated with the new sum. The next issue is what to do with the rows where Total_Cover does not equal 100 and either of the other columns are listed as NA or 0. My approach is to remove these rows instead of assuming that the NA's could potentially be certain values.
 
- snowsurvey_fixed_1 <- snowsurvey_fixed_1 %>% 
-   mutate(Test_1 = ifelse(Total_test > Total_cover, 
-                          ifelse(Total_test <= 100, Total_test, Total_cover), Total_test)) 
-#   mutate(Test_1 = ifelse(Total_test > Total_cover)) 
+```{r}
+# Remove rows where
+# There are 4,680 rows
+snowsurvey_fixed <- snowsurvey_fixed_1 %>%
+  filter(!c(Total_cover < 100)) %>%
+  select(-Total_test)
 
-unique(snowsurvey_fixed_1$Total_test)
+write.csv(snowsurvey_fixed, "data/processed/all_cover_fixed_Hazel_Vaquero.csv")
 
-round(unique(snowsurvey_fixed_1$Snow_cover), digits = 0)
-unique(snowsurvey_fixed_1$Land_cover)
 ```
 
