@@ -1,7 +1,7 @@
 ---
 title: "week2-data-cleaning"
 format: html
-editor: "Hazel Vaquero"
+editor: "HazelVaquero"
 ---
 
 Repository Link: https://github.com/hazelvaq/bren-meds213-data-cleaning 
@@ -24,8 +24,8 @@ snowsurvey_fixed <- read_csv("data/processed/snow_cover.csv")
 
 ```
 
-
 ### Clean water cover column
+
 ```{r clean water cover }
 
 glimpse(snowsurvey_fixed)
@@ -108,11 +108,10 @@ snowsurvey_fixed <- snowsurvey_fixed %>%
   # Turn column numeric
   mutate(Land_cover = as.integer(Land_cover))
 
-unique(snowsurvey_fixed$Land_cover)
-
+# Values less than 100
 # -100 and -298 values
 
-snowsurvey_fixed %>% filter(Land_cover < 0)
+snowsurvey_fixed %>% filter(Land_cover  < 0)
 
 ```
 
@@ -120,6 +119,13 @@ Land_cover has -100 and -298 value. For -100 the Total_Cover is 100 and Water_Co
 
 ```{r}
 
+# Land_cover -100
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Land_cover = ifelse(Land_cover == -100, 100, Land_cover))
+
+# Land_cover -298
+snowsurvey_fixed <- snowsurvey_fixed %>% 
+  mutate(Land_cover = ifelse(Land_cover == -298, 55, Land_cover))
 ```
 
 
@@ -136,6 +142,7 @@ snowsurvey_fixed <- snowsurvey_fixed %>%
   mutate(Total_cover = ifelse(str_detect(Total_cover, "^<"), NA, Land_cover))
 
 unique(snowsurvey_fixed$Total_cover)
+
 ```
 
 ```{r}
@@ -168,7 +175,7 @@ In the code above, if the summation of Snow_cover + Water_cover + Land_cover was
 # There are 4,680 rows
 snowsurvey_fixed <- snowsurvey_fixed_1 %>%
   filter(!c(Total_cover < 100)) %>%
-  select(-Total_test)
+  select(-c(Total_test, `Snow_cover == as.numeric(Snow_cover)`))
 
 write.csv(snowsurvey_fixed, "data/processed/all_cover_fixed_Hazel_Vaquero.csv")
 
